@@ -3,30 +3,26 @@ import xml.etree.ElementTree as ET
 from copy import deepcopy
 from typing import Dict, List
 
-import alphashape
-from scipy.spatial import Delaunay
 import kinpy
 import numpy as np
 import pyvista
 import transformations as tf
+import trimesh
 import xacro
 from ament_index_python import get_package_share_directory
 from kinpy.chain import Chain
 from pyvista import pyvista_ndarray
-from shapely.geometry import Point
-from collections import defaultdict
-from shapely.ops import cascaded_union
 
 
 class MeshifyRobot:
     chain: Chain
     meshes: List[pyvista.DataSet]
 
-    def __init__(self, urdf: str) -> None:
+    def __init__(self, urdf: str, resolution: str = "collision") -> None:
         self.chain = self._load_chain(urdf)
         self.joint_names = self.chain.get_joint_parameter_names(exclude_fixed=True)
         self.dof = len(self.joint_names)
-        self.paths, self.link_names = self._get_mesh_paths(urdf)
+        self.paths, self.link_names = self._get_mesh_paths(urdf, resolution)
         self.meshes = self._load_meshes(self.paths)
 
     def transformed_meshes(self, q: np.ndarray) -> List[pyvista.DataSet]:
@@ -52,19 +48,25 @@ class MeshifyRobot:
             mesh.transform(ht @ np.linalg.inv(ht0))
         return meshes
 
-    def plot_meshes(self, meshes) -> None:
-        plottter = pyvista.Plotter()
+    def plot_meshes(
+        self, meshes, background_color: str = "gray", mesh_color: str = "white"
+    ) -> None:
+        plotter = pyvista.Plotter()
+        plotter.background_color = background_color
         for mesh in meshes:
-            plottter.add_mesh(mesh)
-        plottter.show()
+            plotter.add_mesh(mesh, color=mesh_color)
+        plotter.show()
 
-    def plot_point_clouds(self, meshes) -> None:
+    def plot_point_clouds(
+        self, meshes, background_color: str = "gray", point_color: str = "white"
+    ) -> None:
         point_clouds = self.meshes_to_point_clouds(meshes)
         point_clouds = [pyvista.PolyData(point_cloud) for point_cloud in point_clouds]
-        plottter = pyvista.Plotter()
+        plotter = pyvista.Plotter()
+        plotter.background_color = background_color
         for point_cloud in point_clouds:
-            plottter.add_mesh(point_cloud, point_size=1)
-        plottter.show()
+            plotter.add_mesh(point_cloud, point_size=1, color=point_color)
+        plotter.show()
 
     def meshes_to_point_clouds(
         self, meshes: List[pyvista.DataSet]
@@ -81,64 +83,8 @@ class MeshifyRobot:
         point_cloud = mesh.points
         return point_cloud
 
-    def alpha_shape_from_point_cloud(self, point_cloud: np.ndarray, alpha: float):
-        """
-        Taken from https://stackoverflow.com/questions/26303878/alpha-shapes-in-3d
-
-        Compute the alpha shape (concave hull) of a set of 3D points.
-        Parameters:
-            point_cloud - np.array of shape (n,3) points.
-            alpha - alpha value.
-        return
-            outer surface vertex indices, edge indices, and triangle indices
-        """
-
-        tetra = Delaunay(point_cloud)
-        # Find radius of the circumsphere.
-        # By definition, radius of the sphere fitting inside the tetrahedral needs
-        # to be smaller than alpha value
-        # http://mathworld.wolfram.com/Circumsphere.html
-        tetrapos = np.take(point_cloud, tetra.vertices, axis=0)
-        normsq = np.sum(tetrapos**2, axis=2)[:, :, None]
-        ones = np.ones((tetrapos.shape[0], tetrapos.shape[1], 1))
-        a = np.linalg.det(np.concatenate((tetrapos, ones), axis=2))
-        Dx = np.linalg.det(
-            np.concatenate((normsq, tetrapos[:, :, [1, 2]], ones), axis=2)
-        )
-        Dy = -np.linalg.det(
-            np.concatenate((normsq, tetrapos[:, :, [0, 2]], ones), axis=2)
-        )
-        Dz = np.linalg.det(
-            np.concatenate((normsq, tetrapos[:, :, [0, 1]], ones), axis=2)
-        )
-        c = np.linalg.det(np.concatenate((normsq, tetrapos), axis=2))
-        r = np.sqrt(Dx**2 + Dy**2 + Dz**2 - 4 * a * c) / (2 * np.abs(a))
-
-        # Find tetrahedrals
-        tetras = tetra.vertices[r < alpha, :]
-        # triangles
-        tri_comb = np.array([(0, 1, 2), (0, 1, 3), (0, 2, 3), (1, 2, 3)])
-        triangles = tetras[:, tri_comb].reshape(-1, 3)
-        triangles = np.sort(triangles, axis=1)
-        # Remove triangles that occurs twice, because they are within shapes
-        triangle_dict = defaultdict(int)
-        for tri in triangles:
-            triangle_dict[tuple(tri)] += 1
-        triangles = np.array([tri for tri in triangle_dict if triangle_dict[tri] == 1])
-        # edges
-        edge_comb = np.array([(0, 1), (0, 2), (1, 2)])
-        edges = triangles[:, edge_comb].reshape(-1, 2)
-        edges = np.sort(edges, axis=1)
-        edges = np.unique(edges, axis=0)
-
-        vertices = np.unique(edges)
-        return vertices, edges, triangles
-
     def remove_inner_points(self, point_cloud: np.ndarray, alpha: float):
-        vertices, edges, triangles = self.alpha_shape_from_point_cloud(
-            point_cloud, alpha
-        )
-        return point_cloud[vertices]
+        raise DeprecationWarning("To be re-added.")
 
     def _sub_sample(self, data: np.ndarray, N: int):
         indices = np.random.choice(data.shape[0], N, replace=False)
@@ -149,7 +95,7 @@ class MeshifyRobot:
         transforms = self.chain.forward_kinematics(q)
         return transforms
 
-    def _get_mesh_paths(self, urdf: str):
+    def _get_mesh_paths(self, urdf: str, resolution: str = "collision"):
         paths = []
         names = []
 
@@ -159,7 +105,7 @@ class MeshifyRobot:
 
         robot = ET.fromstring(urdf)
         for link in robot.findall("link"):
-            visual = link.find("visual")
+            visual = link.find(resolution)
             if visual:
                 name = link.attrib["name"]
                 geometry = visual.find("geometry")
@@ -175,7 +121,21 @@ class MeshifyRobot:
         return paths, names
 
     def _load_mesh(self, path: str):
-        mesh = pyvista.read(path)
+        print(f"Loading mesh from {path}")
+        if path.endswith(".stl"):
+            mesh = pyvista.read(path)
+        elif path.endswith(".dae"):
+            scene = trimesh.load_mesh(path)
+            vertices = []
+            faces = []
+            for geometry in scene.geometry.values():
+                vertices.append(geometry.vertices)
+                faces.append(geometry.faces)
+            vertices = np.concatenate(vertices, axis=0).tolist()
+            faces = np.concatenate(faces, axis=0).tolist()
+            mesh = pyvista.PolyData(vertices, faces)
+        else:
+            raise NotImplementedError(f"File type {path} not supported.")
         return mesh
 
     def _load_meshes(self, paths: List[str]):
@@ -197,20 +157,7 @@ if __name__ == "__main__":
     meshify_robot = MeshifyRobot(urdf)
 
     for i in range(10):
-        q = np.random.uniform(-np.pi, np.pi, meshify_robot.dof)
+        q = np.random.uniform(-np.pi / 2, np.pi / 2, meshify_robot.dof)
         meshes = meshify_robot.transformed_meshes(q)
         meshify_robot.plot_meshes(meshes)
         meshify_robot.plot_point_clouds(meshes)
-
-        # convex hull
-        point_cloud = meshify_robot.meshes_to_point_cloud(meshes)
-        vertices, edges, triangles = meshify_robot.alpha_shape_from_point_cloud(
-            point_cloud, alpha=0.2
-        )
-        point_cloud = point_cloud[vertices]
-
-        # plot
-        point_cloud = pyvista.PolyData(point_cloud)
-        plotter = pyvista.Plotter()
-        plotter.add_mesh(point_cloud, point_size=1)
-        plotter.show()
