@@ -3,6 +3,5 @@ numpy
 pyvista
 transformations
 trimesh
-xacro
 ament_index_python
 kinpy
