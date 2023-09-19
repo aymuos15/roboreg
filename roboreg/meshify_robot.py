@@ -8,7 +8,6 @@ import numpy as np
 import pyvista
 import transformations as tf
 import trimesh
-import xacro
 from ament_index_python import get_package_share_directory
 from kinpy.chain import Chain
 from pyvista import pyvista_ndarray
@@ -153,19 +152,3 @@ class MeshifyRobot:
     def _load_chain(self, urdf: str) -> Chain:
         chain = kinpy.build_chain_from_urdf(urdf)
         return chain
-
-
-if __name__ == "__main__":
-    urdf = xacro.process(
-        os.path.join(
-            get_package_share_directory("lbr_description"), "urdf/med7/med7.urdf.xacro"
-        )
-    )
-
-    meshify_robot = MeshifyRobot(urdf, "visual")
-
-    for i in range(10):
-        q = np.random.uniform(-np.pi / 2, np.pi / 2, meshify_robot.dof)
-        meshes = meshify_robot.transformed_meshes(q)
-        meshify_robot.plot_meshes(meshes)
-        meshify_robot.plot_point_clouds(meshes)
