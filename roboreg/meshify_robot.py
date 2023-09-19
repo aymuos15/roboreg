@@ -1,7 +1,7 @@
 import os
 import xml.etree.ElementTree as ET
 from copy import deepcopy
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
 import kinpy
 import numpy as np
@@ -16,16 +16,22 @@ from pyvista import pyvista_ndarray
 
 class MeshifyRobot:
     chain: Chain
-    meshes: List[pyvista.DataSet]
+    joint_names: List[str]
+    dof: int
+    paths: List[str]
+    link_names: List[str]
+    meshes: List[pyvista.PolyData]
 
     def __init__(self, urdf: str, resolution: str = "collision") -> None:
         self.chain = self._load_chain(urdf)
         self.joint_names = self.chain.get_joint_parameter_names(exclude_fixed=True)
         self.dof = len(self.joint_names)
+        if resolution not in ["collision", "visual"]:
+            raise ValueError(f"Resolution {resolution} not supported.")
         self.paths, self.link_names = self._get_mesh_paths(urdf, resolution)
         self.meshes = self._load_meshes(self.paths)
 
-    def transformed_meshes(self, q: np.ndarray) -> List[pyvista.DataSet]:
+    def transformed_meshes(self, q: np.ndarray) -> List[pyvista.PolyData]:
         zero_tf_dict = self._get_transforms(np.zeros(self.dof))
         tf_dict = self._get_transforms(q)
 
@@ -95,7 +101,9 @@ class MeshifyRobot:
         transforms = self.chain.forward_kinematics(q)
         return transforms
 
-    def _get_mesh_paths(self, urdf: str, resolution: str = "collision"):
+    def _get_mesh_paths(
+        self, urdf: str, resolution: str = "collision"
+    ) -> Tuple[List[str], List[str]]:
         paths = []
         names = []
 
@@ -120,7 +128,7 @@ class MeshifyRobot:
                     paths.append(path)
         return paths, names
 
-    def _load_mesh(self, path: str):
+    def _load_mesh(self, path: str) -> pyvista.PolyData:
         print(f"Loading mesh from {path}")
         if path.endswith(".stl"):
             mesh = pyvista.read(path)
@@ -138,7 +146,7 @@ class MeshifyRobot:
             raise NotImplementedError(f"File type {path} not supported.")
         return mesh
 
-    def _load_meshes(self, paths: List[str]):
+    def _load_meshes(self, paths: List[str]) -> List[pyvista.PolyData]:
         meshes = [self._load_mesh(path) for path in paths]
         return meshes
 
@@ -154,7 +162,7 @@ if __name__ == "__main__":
         )
     )
 
-    meshify_robot = MeshifyRobot(urdf)
+    meshify_robot = MeshifyRobot(urdf, "visual")
 
     for i in range(10):
         q = np.random.uniform(-np.pi / 2, np.pi / 2, meshify_robot.dof)
