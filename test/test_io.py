@@ -18,13 +18,13 @@ def test_urdf_parser() -> None:
 
 
 def test_find_files() -> None:
-    path = "test/data/lbr_med7/zed2i"
+    path = "test/assets/lbr_med7/zed2i"
     for mask_file in find_files(path, "mask_sam2_left_*.png"):
         print(mask_file)
 
 
 def test_parse_camera_info() -> None:
-    path = "test/data/lbr_med7/zed2i"
+    path = "test/assets/lbr_med7/zed2i"
     file = "left_camera_info.yaml"
     height, width, intrinsic_matrix = parse_camera_info(os.path.join(path, file))
 
@@ -35,7 +35,7 @@ def test_parse_camera_info() -> None:
 
 def test_parse_hydra_data() -> None:
     joint_states, masks, depths = parse_hydra_data(
-        "test/data/lbr_med7/zed2i",
+        "test/assets/lbr_med7/zed2i",
         joint_states_pattern="joint_states_*.npy",
         mask_pattern="mask_sam2_left_*.png",
         depth_pattern="depth_*.npy",

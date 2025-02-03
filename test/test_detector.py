@@ -15,7 +15,7 @@ def test_sample_parser_mixin() -> None:
     detector = OpenCVDetector()
     detector.positive_samples = [[1, 2], [3, 4]]
     detector.negative_samples = [[5, 6]]
-    csv_file = "test/data/samples.csv"
+    csv_file = "test/assets/samples.csv"
     detector.write(csv_file, samples=detector.samples, labels=detector.labels)
 
     detector.clear()

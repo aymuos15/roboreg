@@ -74,10 +74,10 @@ def test_depth_to_xyz() -> None:
 
 def test_realsense_depth_to_xyz() -> None:
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    path = "test/data/xarm/realsense"
+    path = "test/assets/xarm/realsense"
     depth_files = find_files(path, "depth_*.npy")
     height, width, intrinsics = parse_camera_info(
-        "test/data/xarm/realsense/camera_info.yaml"
+        "test/assets/xarm/realsense/camera_info.yaml"
     )
     intrinsics = torch.tensor(intrinsics, dtype=torch.float32, device=device)
     depths = torch.tensor(

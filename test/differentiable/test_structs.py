@@ -15,8 +15,8 @@ def test_torch_mesh_container() -> None:
     # test load simple meshes
     torch_robot_mesh = TorchMeshContainer(
         mesh_paths={
-            "link_0": "test/data/lbr_med7/mesh/link_0.stl",
-            "link_1": "test/data/lbr_med7/mesh/link_1.stl",
+            "link_0": "test/assets/lbr_med7/mesh/link_0.stl",
+            "link_1": "test/assets/lbr_med7/mesh/link_1.stl",
         }
     )
     print(torch_robot_mesh.per_mesh_vertex_count)
@@ -28,8 +28,8 @@ def test_torch_mesh_container() -> None:
     # test load visual meshes
     torch_robot_mesh = TorchMeshContainer(
         mesh_paths={
-            "link_0": "test/data/lbr_med7/mesh/link_0.dae",
-            "link_1": "test/data/lbr_med7/mesh/link_1.dae",
+            "link_0": "test/assets/lbr_med7/mesh/link_0.dae",
+            "link_1": "test/assets/lbr_med7/mesh/link_1.dae",
         }
     )
     print(torch_robot_mesh.per_mesh_vertex_count)
@@ -45,8 +45,8 @@ def test_torch_mesh_container() -> None:
     target_reduction = 0.6
     torch_robot_mesh = TorchMeshContainer(
         mesh_paths={
-            "link_0": "test/data/lbr_med7/mesh/link_0.dae",
-            "link_1": "test/data/lbr_med7/mesh/link_1.dae",
+            "link_0": "test/assets/lbr_med7/mesh/link_0.dae",
+            "link_1": "test/assets/lbr_med7/mesh/link_1.dae",
         },
         target_reduction=target_reduction,
     )

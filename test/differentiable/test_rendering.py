@@ -21,7 +21,7 @@ class TestRendering:
     def __init__(
         self,
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
-        data_prefix: str = "test/data/lbr_med7",
+        data_prefix: str = "test/assets/lbr_med7",
         recording_prefix: str = "zed2i/high_res",
         root_link_name: str = "lbr_link_0",
         end_link_name: str = "lbr_link_7",
@@ -401,7 +401,7 @@ def test_multi_camera_pose_rendering() -> None:
 
     # load a sample mesh
     meshes = rrd.TorchMeshContainer(
-        {"link_0": "test/data/lbr_med7/mesh/link_0.stl"},
+        {"link_0": "test/assets/lbr_med7/mesh/link_0.stl"},
         batch_size=batch_size,
         device=device,
     )

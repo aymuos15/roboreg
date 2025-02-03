@@ -19,7 +19,8 @@ from roboreg.util import (
 def test_dilate_with_kernel() -> None:
     idx = 1
     mask = cv2.imread(
-        f"test/data/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png", cv2.IMREAD_GRAYSCALE
+        f"test/assets/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png",
+        cv2.IMREAD_GRAYSCALE,
     )
     extended_mask = mask_dilate_with_kernel(mask)
     cv2.imshow("mask", mask)
@@ -31,7 +32,8 @@ def test_dilate_with_kernel() -> None:
 def test_erode_with_kernel() -> None:
     idx = 1
     mask = cv2.imread(
-        f"test/data/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png", cv2.IMREAD_GRAYSCALE
+        f"test/assets/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png",
+        cv2.IMREAD_GRAYSCALE,
     )
     shrinked_mask = mask_erode_with_kernel(mask)
     cv2.imshow("mask", mask)
@@ -43,7 +45,8 @@ def test_erode_with_kernel() -> None:
 def test_exponential_distance_transform() -> None:
     idx = 1
     mask = cv2.imread(
-        f"test/data/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png", cv2.IMREAD_GRAYSCALE
+        f"test/assets/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png",
+        cv2.IMREAD_GRAYSCALE,
     )
     exponential_distance_map = mask_exponential_distance_transform(mask)
     cv2.imshow("mask", mask)
@@ -54,9 +57,10 @@ def test_exponential_distance_transform() -> None:
 
 def test_extract_boundary() -> None:
     idx = 1
-    img = cv2.imread(f"test/data/lbr_med7/zed2i/left_image_{idx}.png")
+    img = cv2.imread(f"test/assets/lbr_med7/zed2i/left_image_{idx}.png")
     mask = cv2.imread(
-        f"test/data/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png", cv2.IMREAD_GRAYSCALE
+        f"test/assets/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png",
+        cv2.IMREAD_GRAYSCALE,
     )
     boundary_mask = mask_extract_boundary(mask)
     overlay = overlay_mask(img, boundary_mask, mode="b", alpha=1.0, scale=1.0)
@@ -69,9 +73,10 @@ def test_extract_boundary() -> None:
 
 def test_extract_extended_boundary() -> None:
     idx = 1
-    img = cv2.imread(f"test/data/lbr_med7/zed2i/left_image_{idx}.png")
+    img = cv2.imread(f"test/assets/lbr_med7/zed2i/left_image_{idx}.png")
     mask = cv2.imread(
-        f"test/data/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png", cv2.IMREAD_GRAYSCALE
+        f"test/assets/lbr_med7/zed2i/mask_sam2_left_image_{idx}.png",
+        cv2.IMREAD_GRAYSCALE,
     )
     extended_boundary_mask = mask_extract_extended_boundary(
         mask, dilation_kernel=np.ones([2, 2]), erosion_kernel=np.ones([10, 10])

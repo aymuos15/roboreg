@@ -7,7 +7,7 @@ from roboreg.util import RegistrationVisualizer, from_homogeneous
 
 def test_visualize_point_cloud():
     meshes = rrd.TorchMeshContainer(
-        mesh_paths={"link_0": "test/data/lbr_med7/mesh/link_0.stl"},
+        mesh_paths={"link_0": "test/assets/lbr_med7/mesh/link_0.stl"},
         device="cpu",
     )
 
@@ -27,8 +27,8 @@ def test_visualize_point_cloud():
 def test_visalize_multi_color_point_cloud():
     meshes = rrd.TorchMeshContainer(
         mesh_paths={
-            "link_0": "test/data/lbr_med7/mesh/link_0.stl",
-            "link_1": "test/data/lbr_med7/mesh/link_1.stl",
+            "link_0": "test/assets/lbr_med7/mesh/link_0.stl",
+            "link_1": "test/assets/lbr_med7/mesh/link_1.stl",
         },
         device="cpu",
     )

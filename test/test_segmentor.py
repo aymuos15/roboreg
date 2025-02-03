@@ -9,7 +9,7 @@ from roboreg.segmentor import Sam2Segmentor, SamSegmentor
 
 
 def test_sam2_segmentor() -> None:
-    img = cv2.imread("test/data/lbr_med7/zed2i/high_res/image_1.png")
+    img = cv2.imread("test/assets/lbr_med7/zed2i/high_res/image_1.png")
 
     # detect
     detector = OpenCVDetector(n_positive_samples=5)  # number of detected samples
@@ -31,7 +31,7 @@ def test_sam2_segmentor() -> None:
 
 
 def test_sam_segmentor() -> None:
-    img = cv2.imread("test/data/lbr_med7/zed2i/high_res/image_1.png")
+    img = cv2.imread("test/assets/lbr_med7/zed2i/high_res/image_1.png")
 
     # detect
     detector = OpenCVDetector(n_positive_samples=5)  # number of detected samples
