@@ -1,0 +1,4 @@
+[lfs]
+  fetchinclude = ""
+  fetchexclude = "*"
+  required = true
