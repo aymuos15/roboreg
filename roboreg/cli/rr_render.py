@@ -98,12 +98,19 @@ def args_factory() -> argparse.Namespace:
         default="b",
         help="Color channel to overlay the render.",
     )
+    parser.add_argument(
+        "--max-jobs",
+        type=int,
+        default=2,
+        help="Number of concurrent compilation jobs for nvdiffrast. Only relevant on first run.",
+    )
     return parser.parse_args()
 
 
 def main():
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
     camera = {
         "camera": create_virtual_camera(
             camera_info_file=args.camera_info_file,

@@ -164,6 +164,12 @@ def args_factory() -> argparse.Namespace:
         default=5,
         help="Number of samples to randomly select from the data for optimization.",
     )
+    parser.add_argument(
+        "--max-jobs",
+        type=int,
+        default=2,
+        help="Number of concurrent compilation jobs for nvdiffrast. Only relevant on first run.",
+    )
     return parser.parse_args()
 
 
@@ -281,6 +287,7 @@ def instantiate_particles(
 def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
 
     # load data
     height, width, intrinsics = parse_camera_info(

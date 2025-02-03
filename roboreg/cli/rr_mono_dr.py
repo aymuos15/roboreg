@@ -127,6 +127,12 @@ def args_factory() -> argparse.Namespace:
         default="HT_left_dr.npy",
         help="Left output file name. Relative to --path.",
     )
+    parser.add_argument(
+        "--max-jobs",
+        type=int,
+        default=2,
+        help="Number of concurrent compilation jobs for nvdiffrast. Only relevant on first run.",
+    )
     return parser.parse_args()
 
 
@@ -174,6 +180,7 @@ def parse_data(
 def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
     images, joint_states, masks = parse_data(
         path=args.path,
         image_pattern=args.image_pattern,
