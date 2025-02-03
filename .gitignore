@@ -4,3 +4,4 @@ roboreg.egg-info
 build
 dist
 nvdiffrast
+test/assets
