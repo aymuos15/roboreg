@@ -5,7 +5,7 @@ import numpy as np
 import rich
 import torch
 
-from roboreg.differentiable import TorchKinematics, TorchMeshContainer
+from roboreg.differentiable import Robot
 from roboreg.hydra_icp import hydra_centroid_alignment, hydra_robust_icp
 from roboreg.io import URDFParser, parse_camera_info, parse_hydra_data
 from roboreg.util import (
@@ -178,46 +178,22 @@ def main():
         rich.print(
             f"End link name not provided. Using the last link with mesh: '{end_link_name}'."
         )
-    kinematics = TorchKinematics(
+
+    # instantiate robot
+    batch_size = len(joint_states)
+    robot = Robot(
         urdf_parser=urdf_parser,
-        device=device,
         root_link_name=root_link_name,
         end_link_name=end_link_name,
-    )
-
-    # instantiate mesh
-    batch_size = len(joint_states)
-    meshes = TorchMeshContainer(
-        mesh_paths=urdf_parser.ros_package_mesh_paths(
-            root_link_name=root_link_name,
-            end_link_name=end_link_name,
-            visual=args.visual_meshes,
-        ),
+        visual=args.visual_meshes,
         batch_size=batch_size,
-        device=device,
     )
 
     # perform forward kinematics
-    mesh_vertices = meshes.vertices.clone()
     joint_states = torch.tensor(
         np.array(joint_states), dtype=torch.float32, device=device
     )
-    ht_lookup = kinematics.mesh_forward_kinematics(joint_states)
-    for link_name, ht in ht_lookup.items():
-        mesh_vertices[
-            :,
-            meshes.lower_vertex_index_lookup[
-                link_name
-            ] : meshes.upper_vertex_index_lookup[link_name],
-        ] = torch.matmul(
-            mesh_vertices[
-                :,
-                meshes.lower_vertex_index_lookup[
-                    link_name
-                ] : meshes.upper_vertex_index_lookup[link_name],
-            ],
-            ht.transpose(-1, -2),
-        )
+    robot.configure(joint_states)
 
     # turn depths into xyzs
     intrinsics = torch.tensor(intrinsics, dtype=torch.float32, device=device)
@@ -242,12 +218,12 @@ def main():
     xyzs = [xyz.squeeze() for xyz in xyzs.cpu().numpy()]
 
     # mesh vertices to list
-    mesh_vertices = from_homogeneous(mesh_vertices)
+    mesh_vertices = from_homogeneous(robot.configured_vertices)
     mesh_vertices = [mesh_vertices[i].contiguous() for i in range(batch_size)]
     mesh_normals = []
     for i in range(batch_size):
         mesh_normals.append(
-            compute_vertex_normals(vertices=mesh_vertices[i], faces=meshes.faces)
+            compute_vertex_normals(vertices=mesh_vertices[i], faces=robot.faces)
         )
 
     # clean observed vertices and turn into tensor
