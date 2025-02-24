@@ -20,8 +20,8 @@ def test_urdf_parser() -> None:
     print(urdf_parser.raw_mesh_paths("lbr_link_0", "lbr_link_ee"))
     print(urdf_parser.ros_package_mesh_paths("lbr_link_0", "lbr_link_ee"))
     print(urdf_parser.mesh_origins("lbr_link_0", "lbr_link_ee"))
-    print(urdf_parser.link_names_with_meshes(visual=False))
-    print(urdf_parser.link_names_with_meshes(visual=True))
+    print(urdf_parser.link_names_with_meshes(collision=True))
+    print(urdf_parser.link_names_with_meshes(collision=False))
 
 
 def test_find_files() -> None:

@@ -82,34 +82,34 @@ class URDFParser:
             link_names.append(child_link_name)
         return link_names
 
-    def link_names_with_meshes(self, visual: bool = False) -> List[str]:
+    def link_names_with_meshes(self, collision: bool = False) -> List[str]:
         r"""Get link names that have meshes.
 
         Args:
-            visual (bool): If True, get visual meshes, else collision meshes.
+            collision (bool): If True, get collision meshes, else visual meshes.
 
         Returns:
             List[str]: List of link names with meshes.
         """
         links = [link.name for link in self._robot.links]
         for link in links:
-            if visual:
-                if not self._robot.link_map[link].visual:
+            if collision:
+                if not self._robot.link_map[link].collision:
                     links.remove(link)
             else:
-                if not self._robot.link_map[link].collision:
+                if not self._robot.link_map[link].visual:
                     links.remove(link)
         return links
 
     def raw_mesh_paths(
-        self, root_link_name: str, end_link_name: str, visual: bool = False
+        self, root_link_name: str, end_link_name: str, collision: bool = False
     ) -> Dict[str, str]:
         r"""Get the raw mesh paths as specified in URDF.
 
         Args:
             root_link_name (str): Root link name.
             end_link_name (str): End link name.
-            visual (bool): If True, get visual mesh paths, else collision mesh paths.
+            collision (bool): If True, get collision mesh paths, else visual mesh paths.
 
         Returns:
             Dict[str,str]: Dictionary of link names and raw mesh paths.
@@ -121,31 +121,33 @@ class URDFParser:
         # lookup paths
         for link_name in link_names:
             link: urdf_parser_py.urdf.Link = self._robot.link_map[link_name]
-            if visual:
-                if link.visual is None:
-                    continue
-                raw_mesh_paths[link_name] = link.visual.geometry.filename
-            else:
+            if collision:
                 if link.collision is None:
                     continue
                 raw_mesh_paths[link_name] = link.collision.geometry.filename
+            else:
+                if link.visual is None:
+                    continue
+                raw_mesh_paths[link_name] = link.visual.geometry.filename
         return raw_mesh_paths
 
     def ros_package_mesh_paths(
-        self, root_link_name: str, end_link_name: str, visual: bool = False
+        self, root_link_name: str, end_link_name: str, collision: bool = False
     ) -> Dict[str, str]:
         r"""Get the absolute mesh paths by resolving package within ROS.
 
         Args:
             root_link_name (str): Root link name.
             end_link_name (str): End link name.
-            visual (bool): If True, get visual mesh paths, else collision mesh paths.
+            collision (bool): If True, get collision mesh paths, else visual mesh paths.
 
         Returns:
             Dict[str,str]: Dictionary of link names and absolute mesh paths.
         """
         raw_mesh_paths = self.raw_mesh_paths(
-            root_link_name=root_link_name, end_link_name=end_link_name, visual=visual
+            root_link_name=root_link_name,
+            end_link_name=end_link_name,
+            collision=collision,
         )
         from ament_index_python import get_package_share_directory
 
@@ -163,14 +165,14 @@ class URDFParser:
         return ros_package_mesh_paths
 
     def mesh_origins(
-        self, root_link_name: str, end_link_name: str, visual: bool = False
+        self, root_link_name: str, end_link_name: str, collision: bool = False
     ) -> Dict[str, np.ndarray]:
         r"""Get mesh origins.
 
         Args:
             root_link_name (str): Root link name.
             end_link_name (str): End link name.
-            visual (bool): If True, get visual mesh origins, else collision mesh origins.
+            collision (bool): If True, get collision mesh origins, else visual mesh origins.
 
         Returns:
             Dict[str,np.ndarray]: Dictionary of link names and mesh origins.
@@ -183,14 +185,14 @@ class URDFParser:
         mesh_origins = {}
         for link_name in link_names:
             link: urdf_parser_py.urdf.Link = self._robot.link_map[link_name]
-            if visual:
-                if link.visual is None:
-                    continue
-                link_origin = link.visual.origin
-            else:
+            if collision:
                 if link.collision is None:
                     continue
                 link_origin = link.collision.origin
+            else:
+                if link.visual is None:
+                    continue
+                link_origin = link.visual.origin
             origin = transformations.euler_matrix(
                 link_origin.rpy[0], link_origin.rpy[1], link_origin.rpy[2], "sxyz"
             )

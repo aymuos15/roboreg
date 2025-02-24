@@ -74,9 +74,9 @@ def args_factory() -> argparse.Namespace:
         help="End link name. If unspecified, the last link with mesh will be used, which may cause errors.",
     )
     parser.add_argument(
-        "--visual-meshes",
+        "--collision-meshes",
         action="store_true",
-        help="If set, visual meshes will be used instead of collision meshes.",
+        help="If set, collision meshes will be used instead of visual meshes.",
     )
     parser.add_argument(
         "--depth-conversion-factor",
@@ -168,16 +168,16 @@ def main():
     root_link_name = args.root_link_name
     end_link_name = args.end_link_name
     if root_link_name == "":
-        root_link_name = urdf_parser.link_names_with_meshes(visual=args.visual_meshes)[
-            0
-        ]
+        root_link_name = urdf_parser.link_names_with_meshes(
+            collision=args.collision_meshes
+        )[0]
         rich.print(
             f"Root link name not provided. Using the first link with mesh: '{root_link_name}'."
         )
     if end_link_name == "":
-        end_link_name = urdf_parser.link_names_with_meshes(visual=args.visual_meshes)[
-            -1
-        ]
+        end_link_name = urdf_parser.link_names_with_meshes(
+            collision=args.collision_meshes
+        )[-1]
         rich.print(
             f"End link name not provided. Using the last link with mesh: '{end_link_name}'."
         )
@@ -188,7 +188,7 @@ def main():
         urdf_parser=urdf_parser,
         root_link_name=root_link_name,
         end_link_name=end_link_name,
-        visual=args.visual_meshes,
+        collision=args.collision_meshes,
         batch_size=batch_size,
     )
 

@@ -123,9 +123,9 @@ def args_factory() -> argparse.Namespace:
         help="Scale the camera resolution by this factor. Reduces memory usage.",
     )
     parser.add_argument(
-        "--visual-meshes",
+        "--collision-meshes",
         action="store_true",
-        help="If set, visual meshes will be used instead of collision meshes.",
+        help="If set, collision meshes will be used instead of visual meshes.",
     )
     parser.add_argument(
         "--camera-info-file",
@@ -348,7 +348,7 @@ def main() -> None:
         urdf_parser=urdf_parser,
         root_link_name=args.root_link_name,
         end_link_name=args.end_link_name,
-        visual=args.visual_meshes,
+        collision=args.collision_meshes,
         batch_size=batch_size,
         device=device,
         target_reduction=args.target_reduction,  # reduce mesh vertex count for memory reduction
