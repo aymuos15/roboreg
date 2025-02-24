@@ -7,7 +7,7 @@ import torch
 
 from roboreg.differentiable import Robot
 from roboreg.hydra_icp import hydra_centroid_alignment, hydra_robust_icp
-from roboreg.io import URDFParser, parse_camera_info, parse_hydra_data
+from roboreg.io import URDFParser, find_files, parse_camera_info, parse_hydra_data
 from roboreg.util import (
     RegistrationVisualizer,
     clean_xyz,
@@ -151,11 +151,14 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # load data
+    joint_states_files = find_files(args.path, args.joint_states_pattern)
+    mask_files = find_files(args.path, args.mask_pattern)
+    depth_files = find_files(args.path, args.depth_pattern)
     joint_states, masks, depths = parse_hydra_data(
         path=args.path,
-        joint_states_pattern=args.joint_states_pattern,
-        mask_pattern=args.mask_pattern,
-        depth_pattern=args.depth_pattern,
+        joint_states_files=joint_states_files,
+        mask_files=mask_files,
+        depth_files=depth_files,
     )
     height, width, intrinsics = parse_camera_info(args.camera_info_file)
 

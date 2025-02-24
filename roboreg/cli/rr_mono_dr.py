@@ -1,7 +1,6 @@
 import argparse
 import importlib
 import os
-from typing import Tuple
 
 import cv2
 import numpy as np
@@ -10,7 +9,7 @@ import rich
 import rich.progress
 import torch
 
-from roboreg.io import find_files
+from roboreg.io import find_files, parse_mono_dr_data
 from roboreg.losses import soft_dice_loss
 from roboreg.util import mask_exponential_distance_transform, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
@@ -136,58 +135,31 @@ def args_factory() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def parse_data(
-    path: str,
-    image_pattern: str,
-    joint_states_pattern: str,
-    mask_pattern: str,
-    sigma: float = 2.0,
-    device: str = "cuda",
-) -> Tuple[np.ndarray, torch.FloatTensor, torch.FloatTensor]:
-    image_files = find_files(path, image_pattern)
-    joint_states_files = find_files(path, joint_states_pattern)
-    left_mask_files = find_files(path, mask_pattern)
-
-    rich.print("Found the following files:")
-    rich.print(f"Images: {image_files}")
-    rich.print(f"Joint states: {joint_states_files}")
-    rich.print(f"Masks: {left_mask_files}")
-
-    if len(image_files) != len(joint_states_files) or len(image_files) != len(
-        left_mask_files
-    ):
-        raise ValueError("Number of images, joint states, masks do not match.")
-
-    images = [cv2.imread(os.path.join(path, file)) for file in image_files]
-    joint_states = [np.load(os.path.join(path, file)) for file in joint_states_files]
-    masks = [
-        mask_exponential_distance_transform(
-            cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE), sigma=sigma
-        )
-        for file in left_mask_files
-    ]
-
-    images = np.array(images)
-    joint_states = torch.tensor(
-        np.array(joint_states), dtype=torch.float32, device=device
-    )
-    masks = torch.tensor(np.array(masks), dtype=torch.float32, device=device).unsqueeze(
-        -1
-    )
-    return images, joint_states, masks
-
-
 def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
-    images, joint_states, masks = parse_data(
+
+    # load data
+    image_files = find_files(args.path, args.image_pattern)
+    joint_states_files = find_files(args.path, args.joint_states_pattern)
+    mask_files = find_files(args.path, args.mask_pattern)
+    images, joint_states, masks = parse_mono_dr_data(
         path=args.path,
-        image_pattern=args.image_pattern,
-        joint_states_pattern=args.joint_states_pattern,
-        mask_pattern=args.mask_pattern,
-        sigma=args.sigma,
-        device=device,
+        image_files=image_files,
+        joint_states_files=joint_states_files,
+        mask_files=mask_files,
+    )
+
+    # pre-process data
+    joint_states = torch.tensor(
+        np.array(joint_states), dtype=torch.float32, device=device
+    )
+    masks = [
+        mask_exponential_distance_transform(mask, sigma=args.sigma) for mask in masks
+    ]
+    masks = torch.tensor(np.array(masks), dtype=torch.float32, device=device).unsqueeze(
+        -1
     )
 
     # instantiate camera with default identity extrinsics because we optimize for robot pose instead
