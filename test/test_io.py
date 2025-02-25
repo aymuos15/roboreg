@@ -8,8 +8,8 @@ from roboreg.io import (
     find_files,
     parse_camera_info,
     parse_hydra_data,
-    parse_mono_dr_data,
-    parse_stereo_dr_data,
+    parse_mono_data,
+    parse_stereo_data,
 )
 
 
@@ -59,12 +59,12 @@ def test_parse_hydra_data() -> None:
     print(depths[0].shape)
 
 
-def test_parse_mono_dr_data() -> None:
+def test_parse_mono_data() -> None:
     path = "test/assets/lbr_med7/zed2i"
     image_files = find_files(path, "left_image_*.png")
     joint_states_files = find_files(path, "joint_states_*.npy")
     mask_files = find_files(path, "mask_sam2_left_*.png")
-    images, joint_states, masks = parse_mono_dr_data(
+    images, joint_states, masks = parse_mono_data(
         path,
         image_files=image_files,
         joint_states_files=joint_states_files,
@@ -78,7 +78,7 @@ def test_parse_mono_dr_data() -> None:
     print(masks[0].shape)
 
 
-def test_parse_stereo_dr_data() -> None:
+def test_parse_stereo_data() -> None:
     path = "test/assets/lbr_med7/zed2i"
     left_image_files = find_files(path, "left_image_*.png")
     right_image_files = find_files(path, "right_image_*.png")
@@ -86,7 +86,7 @@ def test_parse_stereo_dr_data() -> None:
     left_mask_files = find_files(path, "mask_sam2_left_*.png")
     right_mask_files = find_files(path, "mask_sam2_right_*.png")
     left_images, right_images, joint_states, left_masks, right_masks = (
-        parse_stereo_dr_data(
+        parse_stereo_data(
             "test/assets/lbr_med7/zed2i",
             left_image_files=left_image_files,
             right_image_files=right_image_files,
@@ -112,5 +112,5 @@ if __name__ == "__main__":
     test_find_files()
     test_parse_camera_info()
     test_parse_hydra_data()
-    test_parse_mono_dr_data()
-    test_parse_stereo_dr_data()
+    test_parse_mono_data()
+    test_parse_stereo_data()

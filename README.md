@@ -157,6 +157,7 @@ The camera swarm optimization can serve for finding an initial guess to [Monocul
 
 ```shell
 rr-cam-swarm \
+    --collision-meshes \
     --n-cameras 1000 \
     --min-distance 0.5 \
     --max-distance 3.0 \

@@ -11,11 +11,22 @@ def mask_dilate_with_kernel(
     return extended_mask
 
 
+def mask_distance_transform(mask: np.ndarray) -> np.ndarray:
+    return cv2.distanceTransform(mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE)
+
+
 def mask_erode_with_kernel(
     mask: np.ndarray, kernel: np.ndarray = np.ones([4, 4])
 ) -> np.ndarray:
     shrinked_mask = cv2.erode(mask, kernel)
     return shrinked_mask
+
+
+def mask_exponential_decay(mask: np.ndarray, sigma: float = 2.0) -> np.ndarray:
+    inverse_mask = np.where(mask > 0.0, 0.0, 1.0).astype(np.uint8)
+    distance_map = mask_distance_transform(inverse_mask)
+    distance_map = np.exp(-distance_map / sigma)
+    return distance_map
 
 
 def mask_extract_boundary(
@@ -35,14 +46,3 @@ def mask_extract_extended_boundary(
         mask=mask, kernel=dilation_kernel
     ) - mask_erode_with_kernel(mask=mask, kernel=erosion_kernel)
     return extended_boundary_mask
-
-
-def mask_exponential_distance_transform(
-    mask: np.ndarray, sigma: float = 2.0
-) -> np.ndarray:
-    inverse_mask = np.where(mask > 0.0, 0.0, 1.0).astype(np.uint8)
-    distance_map = cv2.distanceTransform(
-        inverse_mask, cv2.DIST_L2, cv2.DIST_MASK_PRECISE
-    )
-    distance_map = np.exp(-distance_map / sigma)
-    return distance_map

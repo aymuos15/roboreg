@@ -9,9 +9,8 @@ import rich
 import rich.progress
 import torch
 
-from roboreg.io import find_files, parse_mono_dr_data
-from roboreg.losses import soft_dice_loss
-from roboreg.util import mask_exponential_distance_transform, overlay_mask
+from roboreg.io import find_files, parse_mono_data
+from roboreg.util import mask_distance_transform, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
 
 
@@ -48,12 +47,6 @@ def args_factory() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Gamma for the learning rate scheduler.",
-    )
-    parser.add_argument(
-        "--sigma",
-        type=float,
-        default=2.0,
-        help="Sigma for the exponential distance transform on target masks.",
     )
     parser.add_argument(
         "--display-progress",
@@ -144,7 +137,7 @@ def main() -> None:
     image_files = find_files(args.path, args.image_pattern)
     joint_states_files = find_files(args.path, args.joint_states_pattern)
     mask_files = find_files(args.path, args.mask_pattern)
-    images, joint_states, masks = parse_mono_dr_data(
+    images, joint_states, masks = parse_mono_data(
         path=args.path,
         image_files=image_files,
         joint_states_files=joint_states_files,
@@ -155,12 +148,10 @@ def main() -> None:
     joint_states = torch.tensor(
         np.array(joint_states), dtype=torch.float32, device=device
     )
-    masks = [
-        mask_exponential_distance_transform(mask, sigma=args.sigma) for mask in masks
-    ]
-    masks = torch.tensor(np.array(masks), dtype=torch.float32, device=device).unsqueeze(
-        -1
-    )
+    distance_maps = [mask_distance_transform(mask) for mask in masks]
+    distance_maps = torch.tensor(
+        np.array(distance_maps), dtype=torch.float32, device=device
+    ).unsqueeze(-1)
 
     # instantiate camera with default identity extrinsics because we optimize for robot pose instead
     camera = {
@@ -213,7 +204,7 @@ def main() -> None:
         renders = {
             "camera": scene.observe_from("camera"),
         }
-        loss = soft_dice_loss(renders["camera"], masks).mean()
+        loss = torch.nn.functional.mse_loss(distance_maps, renders["camera"])
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -240,7 +231,7 @@ def main() -> None:
             # difference left / right render / mask
             difference = (
                 cv2.cvtColor(
-                    np.abs(render - masks[0].squeeze().cpu().numpy()),
+                    np.abs(render - masks[0].astype(np.float32) / 255.0),
                     cv2.COLOR_GRAY2BGR,
                 )
                 * 255.0
@@ -248,7 +239,7 @@ def main() -> None:
             # overlay segmentation mask
             segmentation_overlay = overlay_mask(
                 image,
-                (masks[0].squeeze().cpu().numpy() * 255.0).astype(np.uint8),
+                masks[0],
                 mode="b",
                 scale=1.0,
             )
@@ -277,7 +268,7 @@ def main() -> None:
     for i, render in enumerate(renders):
         render = render.squeeze().cpu().numpy()
         overlay = overlay_mask(images[i], (render * 255.0).astype(np.uint8), scale=1.0)
-        difference = np.abs(render - masks[i].squeeze().cpu().numpy())
+        difference = np.abs(render - masks[i].astype(np.float32) / 255.0)
 
         cv2.imwrite(os.path.join(args.path, f"dr_overlay_{i}.png"), overlay)
         cv2.imwrite(

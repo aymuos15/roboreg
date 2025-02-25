@@ -371,13 +371,13 @@ def parse_hydra_data(
     return joint_states, masks, depths
 
 
-def parse_mono_dr_data(
+def parse_mono_data(
     path: str,
     image_files: List[str],
     joint_states_files: List[str],
     mask_files: List[str],
 ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
-    r"""Parse data for monocular differentiable rendering.
+    r"""Parse monocular data.
 
     Args:
         path (str): Path to the data.
@@ -424,7 +424,7 @@ def parse_mono_dr_data(
     return images, joint_states, masks
 
 
-def parse_stereo_dr_data(
+def parse_stereo_data(
     path: str,
     left_image_files: List[str],
     right_image_files: List[str],
@@ -438,7 +438,7 @@ def parse_stereo_dr_data(
     List[np.ndarray],
     List[np.ndarray],
 ]:
-    r"""Parse data for stereo differentiable rendering.
+    r"""Parse stereo data.
 
     Args:
         path (str): Path to the data.

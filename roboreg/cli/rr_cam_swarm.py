@@ -1,20 +1,17 @@
 import argparse
 import os
-from typing import Tuple
 
 import cv2
 import numpy as np
-import rich
-import rich.progress
 import torch
 
 from roboreg import differentiable as rrd
-from roboreg.io import find_files, parse_camera_info
+from roboreg.io import find_files, parse_camera_info, parse_mono_data
 from roboreg.losses import soft_dice_loss
 from roboreg.optim import LinearParticleSwarm, ParticleSwarmOptimizer
 from roboreg.util import (
     look_at_from_angle,
-    mask_exponential_distance_transform,
+    mask_exponential_decay,
     overlay_mask,
     random_fov_eye_space_coordinates,
 )
@@ -173,58 +170,6 @@ def args_factory() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def parse_data(
-    path: str,
-    image_pattern: str,
-    mask_pattern: str,
-    joint_states_pattern: str,
-    n_samples: int = 5,
-    device: str = "cuda",
-) -> Tuple[np.ndarray, torch.Tensor, torch.Tensor]:
-    image_files = find_files(path, image_pattern)
-    mask_files = find_files(path, mask_pattern)
-    joint_states_files = find_files(path, joint_states_pattern)
-
-    rich.print("Found the following files:")
-    rich.print(f"Images: {image_files}")
-    rich.print(f"Masks: {mask_files}")
-    rich.print(f"Joint states: {joint_states_files}")
-
-    # randomly sample n_samples
-    if n_samples > len(image_files):
-        n_samples = len(image_files)
-    random_indices = np.random.choice(len(image_files), n_samples, replace=False)
-    image_files = np.array(image_files)[random_indices].tolist()
-    mask_files = np.array(mask_files)[random_indices].tolist()
-    joint_states_files = np.array(joint_states_files)[random_indices].tolist()
-
-    rich.print(f"Randomly sampled the following {n_samples} files:")
-    rich.print(f"Images: {image_files}")
-    rich.print(f"Masks: {mask_files}")
-    rich.print(f"Joint states: {joint_states_files}")
-
-    if len(mask_files) != len(joint_states_files):
-        raise ValueError("Number of masks and joint states do not match.")
-
-    images = [
-        cv2.imread(os.path.join(path, file), cv2.IMREAD_COLOR) for file in image_files
-    ]
-    masks = [
-        mask_exponential_distance_transform(
-            cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
-        )
-        for file in mask_files
-    ]
-    joint_states = [np.load(os.path.join(path, file)) for file in joint_states_files]
-
-    masks = torch.tensor(np.array(masks), dtype=torch.float32, device=device)
-    joint_states = torch.tensor(
-        np.array(joint_states), dtype=torch.float32, device=device
-    )
-
-    return images, joint_states, masks
-
-
 def instantiate_particles(
     n_particles: int,
     height: int,
@@ -293,15 +238,30 @@ def main() -> None:
     height, width, intrinsics = parse_camera_info(
         camera_info_file=args.camera_info_file
     )
-    images, joint_states, masks = parse_data(
+    image_files = find_files(args.path, args.image_pattern)
+    mask_files = find_files(args.path, args.mask_pattern)
+    joint_states_files = find_files(args.path, args.joint_states_pattern)
+    n_samples = args.n_samples
+    if n_samples > len(image_files):  # randomly sample n_samples
+        n_samples = len(image_files)
+    random_indices = np.random.choice(len(image_files), n_samples, replace=False)
+    image_files = np.array(image_files)[random_indices].tolist()
+    mask_files = np.array(mask_files)[random_indices].tolist()
+    joint_states_files = np.array(joint_states_files)[random_indices].tolist()
+    images, joint_states, masks = parse_mono_data(
         path=args.path,
-        image_pattern=args.image_pattern,
-        mask_pattern=args.mask_pattern,
-        joint_states_pattern=args.joint_states_pattern,
-        n_samples=args.n_samples,
-        device=device,
+        image_files=image_files,
+        mask_files=mask_files,
+        joint_states_files=joint_states_files,
+    )
+
+    # pre-process data
+    joint_states = torch.tensor(
+        np.array(joint_states), dtype=torch.float32, device=device
     )
     n_joint_states = joint_states.shape[0]
+    masks = [mask_exponential_decay(mask) for mask in masks]
+    masks = torch.tensor(np.array(masks), dtype=torch.float32, device=device)
 
     # scale image data (memory reduction)
     height = int(height * args.scale)
