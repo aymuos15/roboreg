@@ -38,19 +38,19 @@ def create_robot_scene(
     device: torch.device = (
         torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
     ),
-    visual: bool = False,
+    collision: bool = False,
     target_reduction: float = 0.0,
 ) -> RobotScene:
     # create URDF parser
     urdf_parser = URDFParser()
     urdf_parser.from_ros_xacro(ros_package=ros_package, xacro_path=xacro_path)
     if root_link_name == "":
-        root_link_name = urdf_parser.link_names_with_meshes(visual=visual)[0]
+        root_link_name = urdf_parser.link_names_with_meshes(collision=collision)[0]
         rich.print(
             f"Root link name not provided. Using the first link with mesh: '{root_link_name}'."
         )
     if end_link_name == "":
-        end_link_name = urdf_parser.link_names_with_meshes(visual=visual)[-1]
+        end_link_name = urdf_parser.link_names_with_meshes(collision=collision)[-1]
         rich.print(
             f"End link name not provided. Using the last link with mesh: '{end_link_name}'."
         )
@@ -60,7 +60,7 @@ def create_robot_scene(
         urdf_parser=urdf_parser,
         root_link_name=root_link_name,
         end_link_name=end_link_name,
-        visual=visual,
+        collision=collision,
         batch_size=batch_size,
         device=device,
         target_reduction=target_reduction,

@@ -14,7 +14,7 @@ class Robot(TorchMeshContainer):
         urdf_parser: URDFParser,
         root_link_name: str,
         end_link_name: str,
-        visual: bool = False,
+        collision: bool = False,
         batch_size: int = 1,
         device: torch.device = "cuda",
         target_reduction: float = 0.0,
@@ -23,7 +23,7 @@ class Robot(TorchMeshContainer):
             mesh_paths=urdf_parser.ros_package_mesh_paths(
                 root_link_name=root_link_name,
                 end_link_name=end_link_name,
-                visual=visual,
+                collision=collision,
             ),
             batch_size=batch_size,
             device=device,

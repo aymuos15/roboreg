@@ -82,34 +82,34 @@ class URDFParser:
             link_names.append(child_link_name)
         return link_names
 
-    def link_names_with_meshes(self, visual: bool = False) -> List[str]:
+    def link_names_with_meshes(self, collision: bool = False) -> List[str]:
         r"""Get link names that have meshes.
 
         Args:
-            visual (bool): If True, get visual meshes, else collision meshes.
+            collision (bool): If True, get collision meshes, else visual meshes.
 
         Returns:
             List[str]: List of link names with meshes.
         """
         links = [link.name for link in self._robot.links]
         for link in links:
-            if visual:
-                if not self._robot.link_map[link].visual:
+            if collision:
+                if not self._robot.link_map[link].collision:
                     links.remove(link)
             else:
-                if not self._robot.link_map[link].collision:
+                if not self._robot.link_map[link].visual:
                     links.remove(link)
         return links
 
     def raw_mesh_paths(
-        self, root_link_name: str, end_link_name: str, visual: bool = False
+        self, root_link_name: str, end_link_name: str, collision: bool = False
     ) -> Dict[str, str]:
         r"""Get the raw mesh paths as specified in URDF.
 
         Args:
             root_link_name (str): Root link name.
             end_link_name (str): End link name.
-            visual (bool): If True, get visual mesh paths, else collision mesh paths.
+            collision (bool): If True, get collision mesh paths, else visual mesh paths.
 
         Returns:
             Dict[str,str]: Dictionary of link names and raw mesh paths.
@@ -121,31 +121,33 @@ class URDFParser:
         # lookup paths
         for link_name in link_names:
             link: urdf_parser_py.urdf.Link = self._robot.link_map[link_name]
-            if visual:
-                if link.visual is None:
-                    continue
-                raw_mesh_paths[link_name] = link.visual.geometry.filename
-            else:
+            if collision:
                 if link.collision is None:
                     continue
                 raw_mesh_paths[link_name] = link.collision.geometry.filename
+            else:
+                if link.visual is None:
+                    continue
+                raw_mesh_paths[link_name] = link.visual.geometry.filename
         return raw_mesh_paths
 
     def ros_package_mesh_paths(
-        self, root_link_name: str, end_link_name: str, visual: bool = False
+        self, root_link_name: str, end_link_name: str, collision: bool = False
     ) -> Dict[str, str]:
         r"""Get the absolute mesh paths by resolving package within ROS.
 
         Args:
             root_link_name (str): Root link name.
             end_link_name (str): End link name.
-            visual (bool): If True, get visual mesh paths, else collision mesh paths.
+            collision (bool): If True, get collision mesh paths, else visual mesh paths.
 
         Returns:
             Dict[str,str]: Dictionary of link names and absolute mesh paths.
         """
         raw_mesh_paths = self.raw_mesh_paths(
-            root_link_name=root_link_name, end_link_name=end_link_name, visual=visual
+            root_link_name=root_link_name,
+            end_link_name=end_link_name,
+            collision=collision,
         )
         from ament_index_python import get_package_share_directory
 
@@ -163,14 +165,14 @@ class URDFParser:
         return ros_package_mesh_paths
 
     def mesh_origins(
-        self, root_link_name: str, end_link_name: str, visual: bool = False
+        self, root_link_name: str, end_link_name: str, collision: bool = False
     ) -> Dict[str, np.ndarray]:
         r"""Get mesh origins.
 
         Args:
             root_link_name (str): Root link name.
             end_link_name (str): End link name.
-            visual (bool): If True, get visual mesh origins, else collision mesh origins.
+            collision (bool): If True, get collision mesh origins, else visual mesh origins.
 
         Returns:
             Dict[str,np.ndarray]: Dictionary of link names and mesh origins.
@@ -183,14 +185,14 @@ class URDFParser:
         mesh_origins = {}
         for link_name in link_names:
             link: urdf_parser_py.urdf.Link = self._robot.link_map[link_name]
-            if visual:
-                if link.visual is None:
-                    continue
-                link_origin = link.visual.origin
-            else:
+            if collision:
                 if link.collision is None:
                     continue
                 link_origin = link.collision.origin
+            else:
+                if link.visual is None:
+                    continue
+                link_origin = link.visual.origin
             origin = transformations.euler_matrix(
                 link_origin.rpy[0], link_origin.rpy[1], link_origin.rpy[2], "sxyz"
             )
@@ -312,17 +314,17 @@ def parse_camera_info(camera_info_file: str) -> Tuple[int, int, np.ndarray]:
 
 def parse_hydra_data(
     path: str,
-    joint_states_pattern: str = "joint_states_*.npy",
-    mask_pattern: str = "mask_*.png",
-    depth_pattern: str = "depth_*.npy",
+    joint_states_files: List[str],
+    mask_files: List[str],
+    depth_files: List[str],
 ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
     r"""Parse data for Hydra registration.
 
     Args:
         path (str): Path to the data.
-        joint_states_pattern (str): Pattern for joint states files.
-        mask_pattern (str): Pattern for mask files.
-        depth_pattern (str): Pattern for depth files. Note that depth values are expected in meters.
+        joint_states_files (List[str]): Joint states files.
+        mask_files (List[str]): Mask files.
+        depth_files (List[str]): Depth files. Note that depth values are expected in meters.
 
     Returns:
         Tuple[List[np.ndarray],List[np.ndarray],List[np.ndarray]]:
@@ -330,32 +332,176 @@ def parse_hydra_data(
             - Masks of shape HxW.
             - Point clouds of shape HxWx3.
     """
-    joint_state_files = find_files(path, joint_states_pattern)
-    mask_files = find_files(path, mask_pattern)
-    depth_files = find_files(path, depth_pattern)
-
-    if len(joint_state_files) == 0 or len(mask_files) == 0 or len(depth_files) == 0:
+    if len(joint_states_files) == 0 or len(mask_files) == 0 or len(depth_files) == 0:
         raise ValueError("No files found.")
-    if len(joint_state_files) != len(mask_files) or len(joint_state_files) != len(
+    if len(joint_states_files) != len(mask_files) or len(joint_states_files) != len(
         depth_files
     ):
         raise ValueError(
-            f"Number of files do not match. Got {len(joint_state_files)} joint state files, {len(mask_files)} mask files, and {len(depth_files)} depth files."
+            f"Number of files do not match. Got {len(joint_states_files)} joint state files, {len(mask_files)} mask files, and {len(depth_files)} depth files."
         )
 
-    rich.print("Found the following files:")
-    rich.print(f"Joint states: {joint_state_files}")
+    rich.print("Parsing the following files:")
+    rich.print(f"Joint states: {joint_states_files}")
     rich.print(f"Masks: {mask_files}")
     rich.print(f"Depths: {depth_files}")
 
     # load data
     joint_states = [
         np.load(os.path.join(path, joint_state_file))
-        for joint_state_file in joint_state_files
+        for joint_state_file in joint_states_files
     ]
     masks = [
         cv2.imread(os.path.join(path, mask_file), cv2.IMREAD_GRAYSCALE)
         for mask_file in mask_files
     ]
     depths = [np.load(os.path.join(path, depth_file)) for depth_file in depth_files]
+    if not all([mask.dtype == np.uint8 for mask in masks]):
+        raise ValueError("Masks must be of type np.uint8.")
+    if not all([np.all(mask >= 0) and np.all(mask <= 255) for mask in masks]):
+        raise ValueError("Masks must be in the range [0, 255].")
+    if not all(
+        [mask.shape[:2] == depth.shape[:2] for mask, depth in zip(masks, depths)]
+    ):
+        raise ValueError("Mask and depth shapes do not match.")
+    if not all(mask.ndim == 2 for mask in masks):
+        raise ValueError("Masks must be 2D.")
+    if not all(depth.ndim == 2 for depth in depths):
+        raise ValueError("Depths must be 2D.")
     return joint_states, masks, depths
+
+
+def parse_mono_data(
+    path: str,
+    image_files: List[str],
+    joint_states_files: List[str],
+    mask_files: List[str],
+) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+    r"""Parse monocular data.
+
+    Args:
+        path (str): Path to the data.
+        image_files (List[str]): Image files.
+        joint_states_files (List[str]): Joint states files.
+        mask_files (List[str]): Mask files.
+
+    Returns:
+        Tuple[List[np.ndarray],List[np.ndarray],List[np.ndarray]]:
+            - Images of shape HxWx3.
+            - Joint states.
+            - Masks of shape HxW.
+    """
+    if len(image_files) != len(joint_states_files) or len(image_files) != len(
+        mask_files
+    ):
+        raise ValueError("Number of images, joint states, masks do not match.")
+
+    rich.print("Parsing the following files:")
+    rich.print(f"Images: {image_files}")
+    rich.print(f"Joint states: {joint_states_files}")
+    rich.print(f"Masks: {mask_files}")
+
+    images = [cv2.imread(os.path.join(path, file)) for file in image_files]
+    joint_states = [np.load(os.path.join(path, file)) for file in joint_states_files]
+    masks = [
+        cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+        for file in mask_files
+    ]
+    if not all([mask.dtype == np.uint8 for mask in masks]):
+        raise ValueError("Masks must be of type np.uint8.")
+    if not all([np.all(mask >= 0) and np.all(mask <= 255) for mask in masks]):
+        raise ValueError("Masks must be in the range [0, 255].")
+    if not all(
+        [mask.shape[:2] == image.shape[:2] for mask, image in zip(masks, images)]
+    ):
+        raise ValueError("Mask and image shapes do not match.")
+    if not all(mask.ndim == 2 for mask in masks):
+        raise ValueError("Masks must be 2D.")
+    if not all(image.ndim == 3 for image in images):
+        raise ValueError("Images must be 3D.")
+    if not all(image.shape[-1] == 3 for image in images):
+        raise ValueError("Images must have 3 channels")
+    return images, joint_states, masks
+
+
+def parse_stereo_data(
+    path: str,
+    left_image_files: List[str],
+    right_image_files: List[str],
+    joint_states_files: List[str],
+    left_mask_files: List[str],
+    right_mask_files: List[str],
+) -> Tuple[
+    List[np.ndarray],
+    List[np.ndarray],
+    List[np.ndarray],
+    List[np.ndarray],
+    List[np.ndarray],
+]:
+    r"""Parse stereo data.
+
+    Args:
+        path (str): Path to the data.
+        left_image_files (List[str]): Left image files.
+        right_image_files (List[str]): Right image files.
+        joint_states_files (List[str]): Joint states files.
+        left_mask_files (List[str]): Left mask files.
+        right_mask_files (List[str]): Right mask files.
+
+    Returns:
+        Tuple[List[np.ndarray],List[np.ndarray],List[np.ndarray],List[np.ndarray],List[np.ndarray]]:
+            - Left images of shape HxWx3.
+            - Right images of shape HxWx3.
+            - Joint states.
+            - Left masks of shape HxW.
+            - Right masks of shape HxW.
+    """
+    if (
+        len(left_image_files) != len(right_image_files)
+        or len(left_image_files) != len(joint_states_files)
+        or len(left_image_files) != len(left_mask_files)
+        or len(left_image_files) != len(right_mask_files)
+    ):
+        raise ValueError(
+            "Number of left / right images, joint states, left / right masks do not match."
+        )
+
+    rich.print("Parsing the following files:")
+    rich.print(f"Left images: {left_image_files}")
+    rich.print(f"Right images: {right_image_files}")
+    rich.print(f"Joint states: {joint_states_files}")
+    rich.print(f"Left masks: {left_mask_files}")
+    rich.print(f"Right masks: {right_mask_files}")
+
+    left_images = [cv2.imread(os.path.join(path, file)) for file in left_image_files]
+    right_images = [cv2.imread(os.path.join(path, file)) for file in right_image_files]
+    joint_states = [np.load(os.path.join(path, file)) for file in joint_states_files]
+    left_masks = [
+        cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+        for file in left_mask_files
+    ]
+    right_masks = [
+        cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE)
+        for file in right_mask_files
+    ]
+    if not all([mask.dtype == np.uint8 for mask in left_masks]):
+        raise ValueError("Left masks must be of type np.uint8.")
+    if not all([np.all(mask >= 0) and np.all(mask <= 255) for mask in left_masks]):
+        raise ValueError("Left masks must be in the range [0, 255].")
+    if not all([mask.dtype == np.uint8 for mask in right_masks]):
+        raise ValueError("Left masks must be of type np.uint8.")
+    if not all([np.all(mask >= 0) and np.all(mask <= 255) for mask in right_masks]):
+        raise ValueError("Left masks must be in the range [0, 255].")
+    if not all(mask.ndim == 2 for mask in left_masks):
+        raise ValueError("Left masks must be 2D.")
+    if not all(image.ndim == 3 for image in left_images):
+        raise ValueError("Left images must be 3D.")
+    if not all(image.shape[-1] == 3 for image in left_images):
+        raise ValueError("Left images must have 3 channels")
+    if not all(mask.ndim == 2 for mask in right_masks):
+        raise ValueError("Right masks must be 2D.")
+    if not all(image.ndim == 3 for image in right_images):
+        raise ValueError("Right images must be 3D.")
+    if not all(image.shape[-1] == 3 for image in right_images):
+        raise ValueError("Right images must have 3 channels")
+    return left_images, right_images, joint_states, left_masks, right_masks

@@ -7,7 +7,7 @@ import torch
 
 from roboreg.differentiable import Robot
 from roboreg.hydra_icp import hydra_centroid_alignment, hydra_robust_icp
-from roboreg.io import URDFParser, parse_camera_info, parse_hydra_data
+from roboreg.io import URDFParser, find_files, parse_camera_info, parse_hydra_data
 from roboreg.util import (
     RegistrationVisualizer,
     clean_xyz,
@@ -74,9 +74,9 @@ def args_factory() -> argparse.Namespace:
         help="End link name. If unspecified, the last link with mesh will be used, which may cause errors.",
     )
     parser.add_argument(
-        "--visual-meshes",
+        "--collision-meshes",
         action="store_true",
-        help="If set, visual meshes will be used instead of collision meshes.",
+        help="If set, collision meshes will be used instead of visual meshes.",
     )
     parser.add_argument(
         "--depth-conversion-factor",
@@ -151,11 +151,14 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
     # load data
+    joint_states_files = find_files(args.path, args.joint_states_pattern)
+    mask_files = find_files(args.path, args.mask_pattern)
+    depth_files = find_files(args.path, args.depth_pattern)
     joint_states, masks, depths = parse_hydra_data(
         path=args.path,
-        joint_states_pattern=args.joint_states_pattern,
-        mask_pattern=args.mask_pattern,
-        depth_pattern=args.depth_pattern,
+        joint_states_files=joint_states_files,
+        mask_files=mask_files,
+        depth_files=depth_files,
     )
     height, width, intrinsics = parse_camera_info(args.camera_info_file)
 
@@ -165,16 +168,16 @@ def main():
     root_link_name = args.root_link_name
     end_link_name = args.end_link_name
     if root_link_name == "":
-        root_link_name = urdf_parser.link_names_with_meshes(visual=args.visual_meshes)[
-            0
-        ]
+        root_link_name = urdf_parser.link_names_with_meshes(
+            collision=args.collision_meshes
+        )[0]
         rich.print(
             f"Root link name not provided. Using the first link with mesh: '{root_link_name}'."
         )
     if end_link_name == "":
-        end_link_name = urdf_parser.link_names_with_meshes(visual=args.visual_meshes)[
-            -1
-        ]
+        end_link_name = urdf_parser.link_names_with_meshes(
+            collision=args.collision_meshes
+        )[-1]
         rich.print(
             f"End link name not provided. Using the last link with mesh: '{end_link_name}'."
         )
@@ -185,7 +188,7 @@ def main():
         urdf_parser=urdf_parser,
         root_link_name=root_link_name,
         end_link_name=end_link_name,
-        visual=args.visual_meshes,
+        collision=args.collision_meshes,
         batch_size=batch_size,
     )
 

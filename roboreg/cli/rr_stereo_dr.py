@@ -1,7 +1,6 @@
 import argparse
 import importlib
 import os
-from typing import Tuple
 
 import cv2
 import numpy as np
@@ -10,9 +9,8 @@ import rich
 import rich.progress
 import torch
 
-from roboreg.io import find_files
-from roboreg.losses import soft_dice_loss
-from roboreg.util import mask_exponential_distance_transform, overlay_mask
+from roboreg.io import find_files, parse_stereo_data
+from roboreg.util import mask_distance_transform, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
 
 
@@ -51,12 +49,6 @@ def args_factory() -> argparse.Namespace:
         help="Gamma for the learning rate scheduler.",
     )
     parser.add_argument(
-        "--sigma",
-        type=float,
-        default=2.0,
-        help="Sigma for the exponential distance transform on target masks.",
-    )
-    parser.add_argument(
         "--display-progress",
         action="store_true",
         help="Display optimization progress.",
@@ -86,9 +78,9 @@ def args_factory() -> argparse.Namespace:
         help="End link name. If unspecified, the last link with mesh will be used, which may cause errors.",
     )
     parser.add_argument(
-        "--visual-meshes",
+        "--collision-meshes",
         action="store_true",
-        help="If set, visual meshes will be used instead of collision meshes.",
+        help="If set, collision meshes will be used instead of visual meshes.",
     )
     parser.add_argument(
         "--left-camera-info-file",
@@ -166,85 +158,40 @@ def args_factory() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def parse_data(
-    path: str,
-    left_image_pattern: str,
-    right_image_pattern: str,
-    joint_states_pattern: str,
-    left_mask_pattern: str,
-    right_mask_pattern: str,
-    sigma: float = 2.0,
-    device: str = "cuda",
-) -> Tuple[
-    np.ndarray, np.ndarray, torch.FloatTensor, torch.FloatTensor, torch.FloatTensor
-]:
-    left_image_files = find_files(path, left_image_pattern)
-    right_image_files = find_files(path, right_image_pattern)
-    joint_states_files = find_files(path, joint_states_pattern)
-    left_mask_files = find_files(path, left_mask_pattern)
-    right_mask_files = find_files(path, right_mask_pattern)
-
-    rich.print("Found the following files:")
-    rich.print(f"Left images: {left_image_files}")
-    rich.print(f"Right images: {right_image_files}")
-    rich.print(f"Joint states: {joint_states_files}")
-    rich.print(f"Left masks: {left_mask_files}")
-    rich.print(f"Right masks: {right_mask_files}")
-
-    if (
-        len(left_image_files) != len(right_image_files)
-        or len(left_image_files) != len(joint_states_files)
-        or len(left_image_files) != len(left_mask_files)
-        or len(left_image_files) != len(right_mask_files)
-    ):
-        raise ValueError(
-            "Number of left / right images, joint states, left / right masks do not match."
-        )
-
-    left_images = [cv2.imread(os.path.join(path, file)) for file in left_image_files]
-    right_images = [cv2.imread(os.path.join(path, file)) for file in right_image_files]
-    joint_states = [np.load(os.path.join(path, file)) for file in joint_states_files]
-    left_masks = [
-        mask_exponential_distance_transform(
-            cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE), sigma=sigma
-        )
-        for file in left_mask_files
-    ]
-    right_masks = [
-        mask_exponential_distance_transform(
-            cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE), sigma=sigma
-        )
-        for file in right_mask_files
-    ]
-
-    left_images = np.array(left_images)
-    right_images = np.array(right_images)
-    joint_states = torch.tensor(
-        np.array(joint_states), dtype=torch.float32, device=device
-    )
-    left_masks = torch.tensor(
-        np.array(left_masks), dtype=torch.float32, device=device
-    ).unsqueeze(-1)
-    right_masks = torch.tensor(
-        np.array(right_masks), dtype=torch.float32, device=device
-    ).unsqueeze(-1)
-    return left_images, right_images, joint_states, left_masks, right_masks
-
-
 def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
-    left_images, right_images, joint_states, left_masks, right_masks = parse_data(
-        path=args.path,
-        left_image_pattern=args.left_image_pattern,
-        right_image_pattern=args.right_image_pattern,
-        joint_states_pattern=args.joint_states_pattern,
-        left_mask_pattern=args.left_mask_pattern,
-        right_mask_pattern=args.right_mask_pattern,
-        sigma=args.sigma,
-        device=device,
+
+    # load data
+    left_image_files = find_files(args.path, args.left_image_pattern)
+    right_image_files = find_files(args.path, args.right_image_pattern)
+    joint_states_files = find_files(args.path, args.joint_states_pattern)
+    left_mask_files = find_files(args.path, args.left_mask_pattern)
+    right_mask_files = find_files(args.path, args.right_mask_pattern)
+    left_images, right_images, joint_states, left_masks, right_masks = (
+        parse_stereo_data(
+            path=args.path,
+            left_image_files=left_image_files,
+            right_image_files=right_image_files,
+            joint_states_files=joint_states_files,
+            left_mask_files=left_mask_files,
+            right_mask_files=right_mask_files,
+        )
     )
+
+    # pre-process data
+    joint_states = torch.tensor(
+        np.array(joint_states), dtype=torch.float32, device=device
+    )
+    left_distance_maps = [mask_distance_transform(mask) for mask in left_masks]
+    right_distance_maps = [mask_distance_transform(mask) for mask in right_masks]
+    left_distance_maps = torch.tensor(
+        np.array(left_distance_maps), dtype=torch.float32, device=device
+    ).unsqueeze(-1)
+    right_distance_maps = torch.tensor(
+        np.array(right_distance_maps), dtype=torch.float32, device=device
+    ).unsqueeze(-1)
 
     # instantiate:
     #   - left camera with default identity extrinsics because we optimize for robot pose instead
@@ -270,7 +217,7 @@ def main() -> None:
         end_link_name=args.end_link_name,
         cameras=cameras,
         device=device,
-        visual=args.visual_meshes,
+        collision=args.collision_meshes,
     )
 
     # load extrinscis estimate......
@@ -305,10 +252,9 @@ def main() -> None:
             "left": scene.observe_from("left"),
             "right": scene.observe_from("right"),
         }
-        loss = (
-            soft_dice_loss(renders["left"], left_masks).mean()
-            + soft_dice_loss(renders["right"], right_masks).mean()
-        )
+        loss = torch.nn.functional.mse_loss(
+            left_distance_maps, renders["left"]
+        ) + torch.nn.functional.mse_loss(right_distance_maps, renders["right"])
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -349,7 +295,7 @@ def main() -> None:
             differences.append(
                 (
                     cv2.cvtColor(
-                        np.abs(left_render - left_masks[0].squeeze().cpu().numpy()),
+                        np.abs(left_render - left_masks[0].astype(np.float32) / 255.0),
                         cv2.COLOR_GRAY2BGR,
                     )
                     * 255.0
@@ -358,7 +304,9 @@ def main() -> None:
             differences.append(
                 (
                     cv2.cvtColor(
-                        np.abs(right_render - right_masks[0].squeeze().cpu().numpy()),
+                        np.abs(
+                            right_render - right_masks[0].astype(np.float32) / 255.0
+                        ),
                         cv2.COLOR_GRAY2BGR,
                     )
                     * 255.0
@@ -369,7 +317,7 @@ def main() -> None:
             segmentation_overlays.append(
                 overlay_mask(
                     left_image,
-                    (left_masks[0].squeeze().cpu().numpy() * 255.0).astype(np.uint8),
+                    left_masks[0],
                     mode="b",
                     scale=1.0,
                 )
@@ -377,7 +325,7 @@ def main() -> None:
             segmentation_overlays.append(
                 overlay_mask(
                     right_image,
-                    (right_masks[0].squeeze().cpu().numpy() * 255.0).astype(np.uint8),
+                    right_masks[0],
                     mode="b",
                     scale=1.0,
                 )
@@ -418,8 +366,10 @@ def main() -> None:
         right_overlay = overlay_mask(
             right_images[i], (right_render * 255.0).astype(np.uint8), scale=1.0
         )
-        left_difference = np.abs(left_render - left_masks[i].squeeze().cpu().numpy())
-        right_difference = np.abs(right_render - right_masks[i].squeeze().cpu().numpy())
+        left_difference = np.abs(left_render - left_masks[i].astype(np.float32) / 255.0)
+        right_difference = np.abs(
+            right_render - right_masks[i].astype(np.float32) / 255.0
+        )
 
         cv2.imwrite(os.path.join(args.path, f"left_dr_overlay_{i}.png"), left_overlay)
         cv2.imwrite(os.path.join(args.path, f"right_dr_overlay_{i}.png"), right_overlay)

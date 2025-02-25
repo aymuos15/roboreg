@@ -1,7 +1,6 @@
 import argparse
 import importlib
 import os
-from typing import Tuple
 
 import cv2
 import numpy as np
@@ -10,9 +9,8 @@ import rich
 import rich.progress
 import torch
 
-from roboreg.io import find_files
-from roboreg.losses import soft_dice_loss
-from roboreg.util import mask_exponential_distance_transform, overlay_mask
+from roboreg.io import find_files, parse_mono_data
+from roboreg.util import mask_distance_transform, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
 
 
@@ -51,12 +49,6 @@ def args_factory() -> argparse.Namespace:
         help="Gamma for the learning rate scheduler.",
     )
     parser.add_argument(
-        "--sigma",
-        type=float,
-        default=2.0,
-        help="Sigma for the exponential distance transform on target masks.",
-    )
-    parser.add_argument(
         "--display-progress",
         action="store_true",
         help="Display optimization progress.",
@@ -86,9 +78,9 @@ def args_factory() -> argparse.Namespace:
         help="End link name. If unspecified, the last link with mesh will be used, which may cause errors.",
     )
     parser.add_argument(
-        "--visual-meshes",
+        "--collision-meshes",
         action="store_true",
-        help="If set, visual meshes will be used instead of collision meshes.",
+        help="If set, collision meshes will be used instead of visual meshes.",
     )
     parser.add_argument(
         "--camera-info-file",
@@ -136,59 +128,30 @@ def args_factory() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def parse_data(
-    path: str,
-    image_pattern: str,
-    joint_states_pattern: str,
-    mask_pattern: str,
-    sigma: float = 2.0,
-    device: str = "cuda",
-) -> Tuple[np.ndarray, torch.FloatTensor, torch.FloatTensor]:
-    image_files = find_files(path, image_pattern)
-    joint_states_files = find_files(path, joint_states_pattern)
-    left_mask_files = find_files(path, mask_pattern)
-
-    rich.print("Found the following files:")
-    rich.print(f"Images: {image_files}")
-    rich.print(f"Joint states: {joint_states_files}")
-    rich.print(f"Masks: {left_mask_files}")
-
-    if len(image_files) != len(joint_states_files) or len(image_files) != len(
-        left_mask_files
-    ):
-        raise ValueError("Number of images, joint states, masks do not match.")
-
-    images = [cv2.imread(os.path.join(path, file)) for file in image_files]
-    joint_states = [np.load(os.path.join(path, file)) for file in joint_states_files]
-    masks = [
-        mask_exponential_distance_transform(
-            cv2.imread(os.path.join(path, file), cv2.IMREAD_GRAYSCALE), sigma=sigma
-        )
-        for file in left_mask_files
-    ]
-
-    images = np.array(images)
-    joint_states = torch.tensor(
-        np.array(joint_states), dtype=torch.float32, device=device
-    )
-    masks = torch.tensor(np.array(masks), dtype=torch.float32, device=device).unsqueeze(
-        -1
-    )
-    return images, joint_states, masks
-
-
 def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
-    images, joint_states, masks = parse_data(
+
+    # load data
+    image_files = find_files(args.path, args.image_pattern)
+    joint_states_files = find_files(args.path, args.joint_states_pattern)
+    mask_files = find_files(args.path, args.mask_pattern)
+    images, joint_states, masks = parse_mono_data(
         path=args.path,
-        image_pattern=args.image_pattern,
-        joint_states_pattern=args.joint_states_pattern,
-        mask_pattern=args.mask_pattern,
-        sigma=args.sigma,
-        device=device,
+        image_files=image_files,
+        joint_states_files=joint_states_files,
+        mask_files=mask_files,
     )
+
+    # pre-process data
+    joint_states = torch.tensor(
+        np.array(joint_states), dtype=torch.float32, device=device
+    )
+    distance_maps = [mask_distance_transform(mask) for mask in masks]
+    distance_maps = torch.tensor(
+        np.array(distance_maps), dtype=torch.float32, device=device
+    ).unsqueeze(-1)
 
     # instantiate camera with default identity extrinsics because we optimize for robot pose instead
     camera = {
@@ -205,7 +168,7 @@ def main() -> None:
         xacro_path=args.xacro_path,
         root_link_name=args.root_link_name,
         end_link_name=args.end_link_name,
-        visual=args.visual_meshes,
+        collision=args.collision_meshes,
         cameras=camera,
         device=device,
     )
@@ -241,7 +204,7 @@ def main() -> None:
         renders = {
             "camera": scene.observe_from("camera"),
         }
-        loss = soft_dice_loss(renders["camera"], masks).mean()
+        loss = torch.nn.functional.mse_loss(distance_maps, renders["camera"])
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
@@ -268,7 +231,7 @@ def main() -> None:
             # difference left / right render / mask
             difference = (
                 cv2.cvtColor(
-                    np.abs(render - masks[0].squeeze().cpu().numpy()),
+                    np.abs(render - masks[0].astype(np.float32) / 255.0),
                     cv2.COLOR_GRAY2BGR,
                 )
                 * 255.0
@@ -276,7 +239,7 @@ def main() -> None:
             # overlay segmentation mask
             segmentation_overlay = overlay_mask(
                 image,
-                (masks[0].squeeze().cpu().numpy() * 255.0).astype(np.uint8),
+                masks[0],
                 mode="b",
                 scale=1.0,
             )
@@ -305,7 +268,7 @@ def main() -> None:
     for i, render in enumerate(renders):
         render = render.squeeze().cpu().numpy()
         overlay = overlay_mask(images[i], (render * 255.0).astype(np.uint8), scale=1.0)
-        difference = np.abs(render - masks[i].squeeze().cpu().numpy())
+        difference = np.abs(render - masks[i].astype(np.float32) / 255.0)
 
         cv2.imwrite(os.path.join(args.path, f"dr_overlay_{i}.png"), overlay)
         cv2.imwrite(
