@@ -1,6 +1,7 @@
 import argparse
 import importlib
 import os
+from enum import Enum
 
 import cv2
 import numpy as np
@@ -10,8 +11,14 @@ import rich.progress
 import torch
 
 from roboreg.io import find_files, parse_mono_data
-from roboreg.util import mask_distance_transform, overlay_mask
+from roboreg.losses import soft_dice_loss
+from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
+
+
+class REGISTRATION_MODE(Enum):
+    DISTANCE_FUNCTION = "distance-function"
+    SEGMENTATION = "segmentation"
 
 
 def args_factory() -> argparse.Namespace:
@@ -47,6 +54,13 @@ def args_factory() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Gamma for the learning rate scheduler.",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=[mode.value for mode in REGISTRATION_MODE],
+        default=REGISTRATION_MODE.DISTANCE_FUNCTION.value,
+        help="Registration mode.",
     )
     parser.add_argument(
         "--display-progress",
@@ -132,6 +146,7 @@ def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
+    mode = REGISTRATION_MODE(args.mode)
 
     # load data
     image_files = find_files(args.path, args.image_pattern)
@@ -148,9 +163,14 @@ def main() -> None:
     joint_states = torch.tensor(
         np.array(joint_states), dtype=torch.float32, device=device
     )
-    distance_maps = [mask_distance_transform(mask) for mask in masks]
-    distance_maps = torch.tensor(
-        np.array(distance_maps), dtype=torch.float32, device=device
+    if mode == REGISTRATION_MODE.DISTANCE_FUNCTION:
+        targets = [mask_distance_transform(mask) for mask in masks]
+    elif mode == REGISTRATION_MODE.SEGMENTATION:
+        targets = [mask_exponential_decay(mask) for mask in masks]
+    else:
+        raise ValueError("Invalid registration mode.")
+    targets = torch.tensor(
+        np.array(targets), dtype=torch.float32, device=device
     ).unsqueeze(-1)
 
     # instantiate camera with default identity extrinsics because we optimize for robot pose instead
@@ -204,7 +224,13 @@ def main() -> None:
         renders = {
             "camera": scene.observe_from("camera"),
         }
-        loss = torch.nn.functional.mse_loss(distance_maps, renders["camera"])
+        if mode == REGISTRATION_MODE.DISTANCE_FUNCTION:
+            loss = torch.nn.functional.mse_loss(targets, renders["camera"])
+        elif mode == REGISTRATION_MODE.SEGMENTATION:
+            loss = soft_dice_loss(targets, renders["camera"]).mean()
+        else:
+            raise ValueError("Invalid registration mode.")
+
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()

@@ -1,6 +1,7 @@
 import argparse
 import importlib
 import os
+from enum import Enum
 
 import cv2
 import numpy as np
@@ -10,8 +11,14 @@ import rich.progress
 import torch
 
 from roboreg.io import find_files, parse_stereo_data
-from roboreg.util import mask_distance_transform, overlay_mask
+from roboreg.losses import soft_dice_loss
+from roboreg.util import mask_distance_transform, mask_exponential_decay, overlay_mask
 from roboreg.util.factories import create_robot_scene, create_virtual_camera
+
+
+class REGISTRATION_MODE(Enum):
+    DISTANCE_FUNCTION = "distance-function"
+    SEGMENTATION = "segmentation"
 
 
 def args_factory() -> argparse.Namespace:
@@ -47,6 +54,13 @@ def args_factory() -> argparse.Namespace:
         type=float,
         default=1.0,
         help="Gamma for the learning rate scheduler.",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        choices=[mode.value for mode in REGISTRATION_MODE],
+        default=REGISTRATION_MODE.DISTANCE_FUNCTION.value,
+        help="Registration mode.",
     )
     parser.add_argument(
         "--display-progress",
@@ -162,6 +176,7 @@ def main() -> None:
     args = args_factory()
     device = "cuda" if torch.cuda.is_available() else "cpu"
     os.environ["MAX_JOBS"] = str(args.max_jobs)  # limit number of concurrent jobs
+    mode = REGISTRATION_MODE(args.mode)
 
     # load data
     left_image_files = find_files(args.path, args.left_image_pattern)
@@ -184,13 +199,19 @@ def main() -> None:
     joint_states = torch.tensor(
         np.array(joint_states), dtype=torch.float32, device=device
     )
-    left_distance_maps = [mask_distance_transform(mask) for mask in left_masks]
-    right_distance_maps = [mask_distance_transform(mask) for mask in right_masks]
-    left_distance_maps = torch.tensor(
-        np.array(left_distance_maps), dtype=torch.float32, device=device
+    if mode == REGISTRATION_MODE.DISTANCE_FUNCTION:
+        left_targets = [mask_distance_transform(mask) for mask in left_masks]
+        right_targets = [mask_distance_transform(mask) for mask in right_masks]
+    elif mode == REGISTRATION_MODE.SEGMENTATION:
+        left_targets = [mask_exponential_decay(mask) for mask in left_masks]
+        right_targets = [mask_exponential_decay(mask) for mask in right_masks]
+    else:
+        raise ValueError("Invalid registration mode.")
+    left_targets = torch.tensor(
+        np.array(left_targets), dtype=torch.float32, device=device
     ).unsqueeze(-1)
-    right_distance_maps = torch.tensor(
-        np.array(right_distance_maps), dtype=torch.float32, device=device
+    right_targets = torch.tensor(
+        np.array(right_targets), dtype=torch.float32, device=device
     ).unsqueeze(-1)
 
     # instantiate:
@@ -252,9 +273,17 @@ def main() -> None:
             "left": scene.observe_from("left"),
             "right": scene.observe_from("right"),
         }
-        loss = torch.nn.functional.mse_loss(
-            left_distance_maps, renders["left"]
-        ) + torch.nn.functional.mse_loss(right_distance_maps, renders["right"])
+        if mode == REGISTRATION_MODE.DISTANCE_FUNCTION:
+            loss = torch.nn.functional.mse_loss(
+                left_targets, renders["left"]
+            ) + torch.nn.functional.mse_loss(right_targets, renders["right"])
+        elif mode == REGISTRATION_MODE.SEGMENTATION:
+            loss = (
+                soft_dice_loss(left_targets, renders["left"]).mean()
+                + soft_dice_loss(right_targets, renders["right"]).mean()
+            )
+        else:
+            raise ValueError("Invalid registration mode.")
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
